@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro Pipe Runner</title>
+    <title>Pipe Runner: Scarlet Traps</title>
     <style>
-        :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --win: #4ade80; }
+        :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --trap: #560319; }
         body {
             margin: 0; background: var(--void); color: white;
             font-family: system-ui, sans-serif; display: flex;
@@ -16,25 +16,29 @@
             background: #000; border: 3px solid var(--pipe);
             border-radius: 15px; box-shadow: 0 0 40px rgba(0,0,0,0.9);
             max-height: 70vh; max-width: 90vw;
+            transition: filter 0.2s;
         }
-        .header { text-align: center; margin-bottom: 15px; padding: 0 20px; }
+        .header { text-align: center; margin-bottom: 10px; }
         #status { font-size: 1.8rem; font-weight: bold; margin: 0; text-shadow: 0 0 10px var(--accent); }
-        .intro { font-size: 0.9rem; color: #94a3b8; margin-top: 5px; line-height: 1.4; }
+        .intro { font-size: 0.85rem; color: #94a3b8; margin: 5px 0; }
         
-        .ui { margin-top: 20px; display: flex; gap: 15px; z-index: 10; }
+        .ui { margin-top: 15px; display: flex; gap: 15px; }
         button {
             padding: 15px 35px; background: var(--pipe); border: 2px solid var(--accent);
             color: white; border-radius: 50px; font-weight: bold; cursor: pointer;
-            transition: transform 0.1s;
+            transition: all 0.2s;
         }
-        button:active { transform: scale(0.95); background: var(--accent); color: var(--void); }
+        button.active {
+            background: var(--accent); color: var(--void);
+            box-shadow: 0 0 20px var(--accent); border-color: white;
+        }
     </style>
 </head>
 <body>
 
     <div class="header">
         <h1 id="status">Pipe Runner</h1>
-        <p class="intro">Tilt your phone to roll the ball and reach the destination</p>
+        <p class="intro">Tilt your phone to roll. Avoid scarlet traps!</p>
     </div>
 
     <canvas id="game-canvas"></canvas>
@@ -48,30 +52,43 @@
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
         const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
         
         const COLS = 13, ROWS = 19, TILE = 25;
         canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        let maze = [], particles = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
-        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, gameActive = true;
+        let maze = [], traps = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, gameActive = false;
 
-        // --- AUDIO SYSTEM ---
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playTone(freq, type, duration, vol) {
-            try {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.start(); osc.stop(audioCtx.currentTime + duration);
-            } catch(e) {}
+        // --- FIXED AUDIO ENGINE ---
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(freq, type, duration, vol, endFreq = null) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+            
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
         }
 
         function generateMaze() {
             maze = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
             const stack = [{x: 1, y: 1}]; maze[1][1] = 0;
+            const paths = [];
+
             while (stack.length > 0) {
                 const curr = stack[stack.length - 1];
                 const neighbors = [[0,2],[0,-2],[2,0],[-2,0]]
@@ -82,22 +99,38 @@
                     const next = neighbors[0];
                     maze[next.y - next.dy/2][next.x - next.dx/2] = 0;
                     maze[next.y][next.x] = 0;
+                    paths.push({x: next.x, y: next.y});
                     stack.push(next);
                 } else stack.pop();
             }
+
+            // Traps: Solid Dark Scarlet
+            traps = [];
+            for(let i=0; i<4; i++) {
+                let p = paths[Math.floor(Math.random() * paths.length)];
+                traps.push({ x: p.x * TILE + TILE/2, y: p.y * TILE + TILE/2 });
+            }
+
             ball.x = TILE * 1.5; ball.y = TILE * 1.5; ball.vx = 0; ball.vy = 0;
             goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
-            gameActive = true; particles = [];
         }
 
-        function createParticles() {
-            for(let i=0; i<30; i++) {
-                particles.push({
-                    x: goal.x, y: goal.y,
-                    vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12,
-                    life: 1, color: `hsl(${Math.random()*360}, 100%, 50%)`
-                });
+        function triggerTrap() {
+            canvas.style.filter = "invert(1) sepia(1) saturate(5) hue-rotate(-50deg)";
+            playSound(600, 'sawtooth', 0.4, 0.1, 50); // Deep warp sound
+            
+            let found = false;
+            while(!found) {
+                let rx = Math.floor(Math.random() * COLS);
+                let ry = Math.floor(Math.random() * ROWS);
+                if(maze[ry][rx] === 0) {
+                    ball.x = rx * TILE + TILE/2;
+                    ball.y = ry * TILE + TILE/2;
+                    ball.vx = 0; ball.vy = 0;
+                    found = true;
+                }
             }
+            setTimeout(() => canvas.style.filter = "", 250);
         }
 
         function update() {
@@ -107,24 +140,25 @@
                 
                 let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
 
-                if (!isWall(nx, ball.y)) ball.x = nx; 
-                else { if(Math.abs(ball.vx) > 1.2) playTone(120, 'square', 0.1, 0.05); ball.vx *= -0.5; }
+                if (!isWall(nx, ball.y)) ball.x = nx; else ball.vx *= -0.5;
+                if (!isWall(ball.x, ny)) ball.y = ny; else ball.vy *= -0.5;
 
-                if (!isWall(ball.x, ny)) ball.y = ny; 
-                else { if(Math.abs(ball.vy) > 1.2) playTone(120, 'square', 0.1, 0.05); ball.vy *= -0.5; }
+                // Collision with Scarlet Traps
+                traps.forEach(t => {
+                    if (Math.hypot(ball.x - t.x, ball.y - t.y) < ball.radius * 1.2) {
+                        triggerTrap();
+                    }
+                });
 
+                // Check Goal
                 if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) {
                     gameActive = false;
                     statusEl.innerText = "VICTORY!";
-                    playTone(523.25, 'sine', 0.4, 0.1); 
-                    setTimeout(() => playTone(659.25, 'sine', 0.6, 0.1), 100);
-                    createParticles();
+                    playSound(523, 'sine', 0.3, 0.1); 
+                    setTimeout(() => playSound(783, 'sine', 0.6, 0.1), 150);
+                    startBtn.classList.remove('active');
                 }
             }
-
-            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.025; });
-            particles = particles.filter(p => p.life > 0);
-
             draw();
             requestAnimationFrame(update);
         }
@@ -133,27 +167,29 @@
             ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
             for (let y=0; y<ROWS; y++) {
                 for (let x=0; x<COLS; x++) {
-                    if (maze[y][x] === 0) {
-                        ctx.fillStyle = '#111827';
-                        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-                    }
+                    if (maze[y][x] === 0) { ctx.fillStyle = '#111827'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE); }
                 }
             }
-            // Goal pulse
-            ctx.fillStyle = `rgba(74, 222, 128, ${0.4 + Math.sin(Date.now()/150)*0.3})`;
+            // Scarlet Traps (No blink, solid color)
+            traps.forEach(t => {
+                ctx.fillStyle = '#560319';
+                ctx.beginPath(); 
+                ctx.arc(t.x, t.y, ball.radius * 1.3, 0, Math.PI*2); 
+                ctx.fill();
+                // Add a small inner shadow/glow for a "hole" look
+                ctx.strokeStyle = '#2d010d';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Goal
+            ctx.fillStyle = `rgba(74, 222, 128, ${0.4 + Math.sin(Date.now()/150)*0.2})`;
             ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius*1.8, 0, Math.PI*2); ctx.fill();
 
-            // Ball (Full Circle)
+            // Ball
             const grad = ctx.createRadialGradient(ball.x-3, ball.y-3, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#7dd3fc'); grad.addColorStop(1, '#0369a1');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
-
-            // Particles
-            particles.forEach(p => {
-                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
-                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
-            });
-            ctx.globalAlpha = 1;
         }
 
         function isWall(px, py) {
@@ -165,15 +201,16 @@
                    });
         }
 
-        async function initApp() {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+        async function playHandler() {
+            initAudio();
+            startBtn.classList.add('active');
+            gameActive = true;
+            statusEl.innerText = "ROLLING...";
             
             try {
                 if (document.documentElement.requestFullscreen) {
                     await document.documentElement.requestFullscreen();
-                    if (screen.orientation && screen.orientation.lock) {
-                        await screen.orientation.lock('portrait').catch(() => {});
-                    }
+                    if (screen.orientation.lock) await screen.orientation.lock('portrait').catch(()=>{});
                 }
             } catch (e) {}
 
@@ -183,16 +220,15 @@
             } else {
                 window.addEventListener('deviceorientation', handleTilt);
             }
-            statusEl.innerText = "ROLLING...";
         }
 
         function handleTilt(e) {
             tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
         }
 
-        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; }
+        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; startBtn.classList.remove('active'); gameActive = false;}
 
-        document.getElementById('startBtn').addEventListener('click', initApp);
+        startBtn.addEventListener('click', playHandler);
         generateMaze(); update();
     </script>
 </body>
