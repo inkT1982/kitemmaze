@@ -15,23 +15,32 @@
         canvas {
             background: #000; border: 3px solid var(--pipe);
             border-radius: 15px; box-shadow: 0 0 40px rgba(0,0,0,0.9);
-            max-height: 75vh; max-width: 90vw;
+            max-height: 70vh; max-width: 90vw;
         }
-        .ui { margin-top: 20px; display: flex; gap: 10px; z-index: 10; }
+        .header { text-align: center; margin-bottom: 15px; padding: 0 20px; }
+        #status { font-size: 1.8rem; font-weight: bold; margin: 0; text-shadow: 0 0 10px var(--accent); }
+        .intro { font-size: 0.9rem; color: #94a3b8; margin-top: 5px; line-height: 1.4; }
+        
+        .ui { margin-top: 20px; display: flex; gap: 15px; z-index: 10; }
         button {
-            padding: 15px 25px; background: var(--pipe); border: 2px solid var(--accent);
+            padding: 15px 35px; background: var(--pipe); border: 2px solid var(--accent);
             color: white; border-radius: 50px; font-weight: bold; cursor: pointer;
+            transition: transform 0.1s;
         }
-        #status { font-size: 1.5rem; margin-bottom: 10px; height: 35px; text-shadow: 0 0 10px var(--accent); }
+        button:active { transform: scale(0.95); background: var(--accent); color: var(--void); }
     </style>
 </head>
 <body>
 
-    <div id="status">Pipe Runner</div>
+    <div class="header">
+        <h1 id="status">Pipe Runner</h1>
+        <p class="intro">Tilt your phone to roll the ball and reach the destination</p>
+    </div>
+
     <canvas id="game-canvas"></canvas>
 
     <div class="ui">
-        <button id="startBtn">START & LOCK</button>
+        <button id="startBtn">PLAY</button>
         <button onclick="resetMaze()">NEW MAZE</button>
     </div>
 
@@ -49,13 +58,15 @@
         // --- AUDIO SYSTEM ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(freq, type, duration, vol) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + duration);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
         }
 
         function generateMaze() {
@@ -83,7 +94,7 @@
             for(let i=0; i<30; i++) {
                 particles.push({
                     x: goal.x, y: goal.y,
-                    vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10,
+                    vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12,
                     life: 1, color: `hsl(${Math.random()*360}, 100%, 50%)`
                 });
             }
@@ -97,20 +108,21 @@
                 let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
 
                 if (!isWall(nx, ball.y)) ball.x = nx; 
-                else { if(Math.abs(ball.vx) > 1) playTone(150, 'square', 0.1, 0.05); ball.vx *= -0.5; }
+                else { if(Math.abs(ball.vx) > 1.2) playTone(120, 'square', 0.1, 0.05); ball.vx *= -0.5; }
 
                 if (!isWall(ball.x, ny)) ball.y = ny; 
-                else { if(Math.abs(ball.vy) > 1) playTone(150, 'square', 0.1, 0.05); ball.vy *= -0.5; }
+                else { if(Math.abs(ball.vy) > 1.2) playTone(120, 'square', 0.1, 0.05); ball.vy *= -0.5; }
 
                 if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) {
                     gameActive = false;
-                    statusEl.innerText = "GOAL REACHED!";
-                    playTone(440, 'sine', 0.5, 0.1); setTimeout(() => playTone(660, 'sine', 0.8, 0.1), 150);
+                    statusEl.innerText = "VICTORY!";
+                    playTone(523.25, 'sine', 0.4, 0.1); 
+                    setTimeout(() => playTone(659.25, 'sine', 0.6, 0.1), 100);
                     createParticles();
                 }
             }
 
-            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; });
+            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.025; });
             particles = particles.filter(p => p.life > 0);
 
             draw();
@@ -128,10 +140,10 @@
                 }
             }
             // Goal pulse
-            ctx.fillStyle = `rgba(74, 222, 128, ${0.5 + Math.sin(Date.now()/200)*0.3})`;
-            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius*1.5, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = `rgba(74, 222, 128, ${0.4 + Math.sin(Date.now()/150)*0.3})`;
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius*1.8, 0, Math.PI*2); ctx.fill();
 
-            // Ball
+            // Ball (Full Circle)
             const grad = ctx.createRadialGradient(ball.x-3, ball.y-3, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#7dd3fc'); grad.addColorStop(1, '#0369a1');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
@@ -139,7 +151,7 @@
             // Particles
             particles.forEach(p => {
                 ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
-                ctx.fillRect(p.x, p.y, 4, 4);
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
             });
             ctx.globalAlpha = 1;
         }
@@ -156,12 +168,11 @@
         async function initApp() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             
-            // Fullscreen & Orientation Lock
             try {
                 if (document.documentElement.requestFullscreen) {
                     await document.documentElement.requestFullscreen();
                     if (screen.orientation && screen.orientation.lock) {
-                        await screen.orientation.lock('portrait').catch(e => console.log("Lock failed"));
+                        await screen.orientation.lock('portrait').catch(() => {});
                     }
                 }
             } catch (e) {}
@@ -172,14 +183,14 @@
             } else {
                 window.addEventListener('deviceorientation', handleTilt);
             }
-            statusEl.innerText = "Rolling...";
+            statusEl.innerText = "ROLLING...";
         }
 
         function handleTilt(e) {
             tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
         }
 
-        function resetMaze() { generateMaze(); statusEl.innerText = "New Path Ready"; }
+        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; }
 
         document.getElementById('startBtn').addEventListener('click', initApp);
         generateMaze(); update();
