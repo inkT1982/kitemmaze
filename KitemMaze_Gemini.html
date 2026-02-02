@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pipe Runner: Toggle Edition</title>
+    <title>Pipe Runner: Fireworks Edition</title>
     <style>
         :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --trap: #560319; --win: #4ade80; }
         body {
@@ -19,25 +19,18 @@
         }
         .header { text-align: center; margin-bottom: 10px; }
         #status { font-size: 1.8rem; font-weight: bold; margin: 0; text-shadow: 0 0 10px var(--accent); }
-        .intro { font-size: 0.85rem; color: #94a3b8; margin: 5px 0; }
-        
         .ui { margin-top: 15px; display: flex; gap: 15px; }
         button {
             padding: 15px 35px; background: var(--pipe); border: 2px solid var(--accent);
             color: white; border-radius: 50px; font-weight: bold; cursor: pointer; min-width: 120px;
         }
-        /* Style for PAUSE state */
-        button.playing {
-            background: #0f172a; border-color: #ef4444; color: #ef4444;
-            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
-        }
+        button.playing { background: #0f172a; border-color: #ef4444; color: #ef4444; }
         
-        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake {
-            10%, 90% { transform: translate3d(-1px, 0, 0); }
-            20%, 80% { transform: translate3d(2px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-            40%, 60% { transform: translate3d(4px, 0, 0); }
+        /* Flashbang Effect */
+        .flash { animation: flashbang 0.4s ease-out; }
+        @keyframes flashbang {
+            0% { filter: brightness(10) contrast(0.1); }
+            100% { filter: brightness(1) contrast(1); }
         }
     </style>
 </head>
@@ -45,7 +38,7 @@
 
     <div class="header">
         <h1 id="status">Pipe Runner</h1>
-        <p class="intro">Tilt to roll. Avoid scarlet traps!</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin: 5px 0;">Reach the goal for a celebration!</p>
     </div>
 
     <canvas id="game-canvas"></canvas>
@@ -64,8 +57,8 @@
         const COLS = 13, ROWS = 19, TILE = 25;
         canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        let maze = [], traps = [], particles = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
-        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false, timeScale = 1;
+        let maze = [], traps = [], fireworks = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false;
 
         let audioCtx;
         function initAudio() {
@@ -74,7 +67,7 @@
         }
 
         function playSound(freq, type, duration, vol, endFreq = null) {
-            if (!audioCtx || audioCtx.state === 'suspended') return;
+            if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
@@ -92,16 +85,13 @@
             const paths = [];
             while (stack.length > 0) {
                 const curr = stack[stack.length - 1];
-                const neighbors = [[0,2],[0,-2],[2,0],[-2,0]]
-                    .map(([dx, dy]) => ({x: curr.x + dx, y: curr.y + dy, dx, dy}))
+                const neighbors = [[0,2],[0,-2],[2,0],[-2,0]].map(([dx, dy]) => ({x: curr.x + dx, y: curr.y + dy, dx, dy}))
                     .filter(n => n.x > 0 && n.x < COLS-1 && n.y > 0 && n.y < ROWS-1 && maze[n.y][n.x] === 1)
                     .sort(() => Math.random() - 0.5);
                 if (neighbors.length > 0) {
                     const next = neighbors[0];
-                    maze[next.y - next.dy/2][next.x - next.dx/2] = 0;
-                    maze[next.y][next.x] = 0;
-                    paths.push({x: next.x, y: next.y});
-                    stack.push(next);
+                    maze[next.y - next.dy/2][next.x - next.dx/2] = 0; maze[next.y][next.x] = 0;
+                    paths.push({x: next.x, y: next.y}); stack.push(next);
                 } else stack.pop();
             }
             traps = [];
@@ -111,37 +101,46 @@
             }
             ball.x = TILE * 1.5; ball.y = TILE * 1.5; ball.vx = 0; ball.vy = 0;
             goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
-            particles = []; timeScale = 1;
+            fireworks = [];
+        }
+
+        function createFirework(x, y) {
+            // Main burst
+            for(let i=0; i<100; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 8 + 2;
+                fireworks.push({
+                    x: x, y: y,
+                    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    life: 1, size: Math.random() * 3 + 1,
+                    color: `hsl(${Math.random() * 360}, 100%, 60%)`,
+                    gravity: 0.15
+                });
+            }
         }
 
         function triggerVictory() {
             isPlaying = false;
             toggleBtn.innerText = "PLAY";
             toggleBtn.classList.remove('playing');
-            timeScale = 0.1;
-            statusEl.innerText = "⭐ LEGENDARY ⭐";
-            statusEl.style.color = "var(--win)";
-            canvas.classList.add('shake');
-            playSound(200, 'sine', 1, 0.2, 800); 
-            for(let i=0; i<60; i++) {
-                particles.push({
-                    x: ball.x, y: ball.y,
-                    vx: (Math.random()-0.5) * 15, vy: (Math.random()-0.5) * 15,
-                    size: Math.random() * 5 + 2,
-                    color: `hsl(${Math.random()*360}, 100%, 60%)`, life: 1
-                });
-            }
-            setTimeout(() => { canvas.classList.remove('shake'); timeScale = 1; }, 1000);
+            statusEl.innerText = "⭐ VICTORY ⭐";
+            canvas.classList.add('flash');
+            
+            playSound(300, 'sine', 0.2, 0.2, 900);
+            createFirework(goal.x, goal.y);
+            
+            // Secondary bursts for "Stronger" effect
+            setTimeout(() => { createFirework(goal.x - 40, goal.y - 40); playSound(200, 'square', 0.5, 0.1); }, 300);
+            setTimeout(() => { createFirework(goal.x + 40, goal.y - 40); playSound(250, 'square', 0.5, 0.1); }, 600);
+            
+            setTimeout(() => canvas.classList.remove('flash'), 500);
         }
 
         function triggerTrap() {
             canvas.style.filter = "invert(1) brightness(2)";
             playSound(600, 'sawtooth', 0.3, 0.1, 50);
             let rx, ry;
-            do {
-                rx = Math.floor(Math.random() * COLS);
-                ry = Math.floor(Math.random() * ROWS);
-            } while (maze[ry][rx] !== 0);
+            do { rx = Math.floor(Math.random() * COLS); ry = Math.floor(Math.random() * ROWS); } while (maze[ry][rx] !== 0);
             ball.x = rx * TILE + TILE/2; ball.y = ry * TILE + TILE/2;
             ball.vx = 0; ball.vy = 0;
             setTimeout(() => canvas.style.filter = "", 150);
@@ -151,10 +150,7 @@
             if (isPlaying) {
                 ball.vx = (ball.vx + tilt.x * 0.45) * 0.93;
                 ball.vy = (ball.vy + tilt.y * 0.45) * 0.93;
-                
-                let nx = ball.x + (ball.vx * timeScale);
-                let ny = ball.y + (ball.vy * timeScale);
-
+                let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
                 if (!isWall(nx, ball.y)) ball.x = nx; else ball.vx *= -0.5;
                 if (!isWall(ball.x, ny)) ball.y = ny; else ball.vy *= -0.5;
 
@@ -165,8 +161,10 @@
                 if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) triggerVictory();
             }
 
-            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.015; });
-            particles = particles.filter(p => p.life > 0);
+            fireworks.forEach(f => {
+                f.x += f.vx; f.y += f.vy; f.vy += f.gravity; f.life -= 0.01;
+            });
+            fireworks = fireworks.filter(f => f.life > 0);
 
             draw();
             requestAnimationFrame(update);
@@ -187,76 +185,47 @@
             ctx.fillStyle = `rgba(74, 222, 128, ${pulse})`;
             ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2, 0, Math.PI*2); ctx.fill();
 
+            // Ball
             const grad = ctx.createRadialGradient(ball.x-3, ball.y-3, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#7dd3fc'); grad.addColorStop(1, '#0369a1');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
 
-            particles.forEach(p => {
-                ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
-                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+            // Fireworks
+            fireworks.forEach(f => {
+                ctx.globalAlpha = f.life; ctx.fillStyle = f.color;
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI*2); ctx.fill();
             });
             ctx.globalAlpha = 1;
         }
 
         function isWall(px, py) {
             const b = ball.radius - 1;
-            return [{x:px-b, y:py-b},{x:px+b, y:py-b},{x:px-b, y:py+b},{x:px+b, y:py+b}]
-                   .some(p => {
-                       let gx = Math.floor(p.x/TILE), gy = Math.floor(p.y/TILE);
-                       return !maze[gy] || maze[gy][gx] === 1;
-                   });
+            return [{x:px-b, y:py-b},{x:px+b, y:py-b},{x:px-b, y:py+b},{x:px+b, y:py+b}].some(p => {
+                let gx = Math.floor(p.x/TILE), gy = Math.floor(p.y/TILE);
+                return !maze[gy] || maze[gy][gx] === 1;
+            });
         }
 
         async function toggleHandler() {
             initAudio();
-            
-            // Screen Lock Logic
             try {
-                if (!document.fullscreenElement) {
-                    if (document.documentElement.requestFullscreen) {
-                        await document.documentElement.requestFullscreen();
-                    }
+                if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                    await document.documentElement.requestFullscreen();
                 }
-                if (screen.orientation && screen.orientation.lock) {
-                    await screen.orientation.lock('portrait').catch(()=>{});
-                }
+                if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('portrait').catch(()=>{});
             } catch (e) {}
-
-            // Permissions Logic
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 const res = await DeviceOrientationEvent.requestPermission();
                 if (res === 'granted') startSensors();
-            } else {
-                startSensors();
-            }
+            } else startSensors();
 
-            // Toggle Behavior
             isPlaying = !isPlaying;
-            if (isPlaying) {
-                toggleBtn.innerText = "PAUSE";
-                toggleBtn.classList.add('playing');
-                statusEl.innerText = "ROLLING...";
-            } else {
-                toggleBtn.innerText = "PLAY";
-                toggleBtn.classList.remove('playing');
-                statusEl.innerText = "PAUSED";
-            }
+            if (isPlaying) { toggleBtn.innerText = "PAUSE"; toggleBtn.classList.add('playing'); statusEl.innerText = "ROLLING..."; }
+            else { toggleBtn.innerText = "PLAY"; toggleBtn.classList.remove('playing'); statusEl.innerText = "PAUSED"; }
         }
 
-        function startSensors() {
-            window.addEventListener('deviceorientation', e => {
-                tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
-            });
-        }
-
-        function resetMaze() { 
-            generateMaze(); 
-            statusEl.innerText = "PIPE RUNNER"; 
-            statusEl.style.color = "white"; 
-            isPlaying = false;
-            toggleBtn.innerText = "PLAY";
-            toggleBtn.classList.remove('playing');
-        }
+        function startSensors() { window.addEventListener('deviceorientation', e => { tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12; }); }
+        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; isPlaying = false; toggleBtn.innerText = "PLAY"; toggleBtn.classList.remove('playing'); }
 
         toggleBtn.addEventListener('click', toggleHandler);
         generateMaze(); update();
