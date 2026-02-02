@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pipe Runner: Modern Seamless</title>
+    <title>Pipe Runner: True Seamless</title>
     <style>
         :root { 
             --bg: #0f172a; 
@@ -22,9 +22,9 @@
         }
 
         canvas {
-            background: rgba(15, 23, 42, 0.9); 
+            background: rgba(15, 23, 42, 0.95); 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px; 
+            border-radius: 24px; 
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
             max-height: 60vh; max-width: 90vw;
         }
@@ -78,10 +78,10 @@
         const statusEl = document.getElementById('status');
         const toggleBtn = document.getElementById('toggleBtn');
         
-        const COLS = 13, ROWS = 19, TILE = 25;
+        const COLS = 13, ROWS = 19, TILE = 29; 
         canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        let maze = [], traps = [], fireworks = [], ball = { x: 0, y: 0, radius: 7, vx: 0, vy: 0 };
+        let maze = [], traps = [], fireworks = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
         let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false;
 
         let audioCtx;
@@ -149,8 +149,8 @@
             playSound(300, 'sine', 0.5, 0.1, 1000);
             createFirework(goal.x, goal.y);
             setTimeout(() => {
-                createFirework(goal.x - 25, goal.y - 25);
-                createFirework(goal.x + 25, goal.y - 25);
+                createFirework(goal.x - 30, goal.y - 30);
+                createFirework(goal.x + 30, goal.y - 30);
                 playSound(200, 'square', 0.3, 0.05);
             }, 250);
             setTimeout(() => canvas.classList.remove('flash'), 500);
@@ -187,39 +187,38 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Draw Continuous Pipes with 3D Indent effect
+            // Draw Unified Paths (No bright dots)
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
             
-            // 1. Darker Outer Stroke (Inner Shadow effect)
+            // Pass 1: Outer Indent (Depth)
             ctx.strokeStyle = '#111827';
             ctx.lineWidth = TILE - 2;
-            drawPipes();
+            drawUnifiedPipePath();
 
-            // 2. Main Pipe Fill
+            // Pass 2: Main Pipe Color
             ctx.strokeStyle = '#1e293b';
             ctx.lineWidth = TILE - 6;
-            drawPipes();
+            drawUnifiedPipePath();
 
-            // Traps
+            // Scarlet Traps
             traps.forEach(t => {
                 ctx.fillStyle = '#991b1b';
-                ctx.beginPath(); ctx.arc(t.x, t.y, ball.radius * 1.1, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(t.x, t.y, ball.radius * 1.2, 0, Math.PI*2); ctx.fill();
             });
 
             // Goal
             const pulse = 0.5 + Math.sin(Date.now()/700) * 0.2;
             ctx.shadowBlur = 20; ctx.shadowColor = '#a3e635';
             ctx.fillStyle = `rgba(163, 230, 53, ${pulse})`;
-            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2.2, 0, Math.PI*2); ctx.fill();
             ctx.shadowBlur = 0;
 
-            // Player
+            // Player Ball
             const grad = ctx.createRadialGradient(ball.x-2, ball.y-2, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#94a3b8');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
 
-            // Fireworks
             fireworks.forEach(f => {
                 ctx.globalAlpha = f.life; ctx.fillStyle = f.color;
                 ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI*2); ctx.fill();
@@ -227,26 +226,30 @@
             ctx.globalAlpha = 1;
         }
 
-        function drawPipes() {
+        function drawUnifiedPipePath() {
+            ctx.beginPath();
             for (let y = 0; y < ROWS; y++) {
                 for (let x = 0; x < COLS; x++) {
                     if (maze[y][x] === 0) {
                         const px = x * TILE + TILE/2;
                         const py = y * TILE + TILE/2;
-                        [[0,1],[1,0],[0,-1],[-1,0]].forEach(([dx, dy]) => {
+                        
+                        // Look for neighbors to connect
+                        [[0,1],[1,0]].forEach(([dx, dy]) => {
                             let nx = x + dx, ny = y + dy;
-                            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && maze[ny][nx] === 0) {
-                                ctx.beginPath();
+                            if (nx < COLS && ny < ROWS && maze[ny][nx] === 0) {
                                 ctx.moveTo(px, py);
                                 ctx.lineTo(nx * TILE + TILE/2, ny * TILE + TILE/2);
-                                ctx.stroke();
                             }
                         });
-                        // Center Cap
-                        ctx.beginPath(); ctx.arc(px, py, ctx.lineWidth/2, 0, Math.PI*2); ctx.fill();
+                        
+                        // Add an invisible dot to ensure corners are rounded even if they have no neighbors
+                        ctx.moveTo(px, py);
+                        ctx.lineTo(px, py);
                     }
                 }
             }
+            ctx.stroke();
         }
 
         function isWall(px, py) {
