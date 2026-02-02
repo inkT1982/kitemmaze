@@ -3,201 +3,186 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smooth Pipe Runner</title>
+    <title>Pro Pipe Runner</title>
     <style>
-        :root {
-            --void: #020617;
-            --pipe: #1e293b;
-            --highlight: #334155;
-            --accent: #38bdf8;
-        }
-
+        :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --win: #4ade80; }
         body {
-            margin: 0;
-            background: var(--void);
-            color: white;
-            font-family: system-ui, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden;
-            touch-action: none;
+            margin: 0; background: var(--void); color: white;
+            font-family: system-ui, sans-serif; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden; touch-action: none;
         }
-
-        #game-canvas {
-            background: var(--void);
-            border: 2px solid var(--pipe);
-            border-radius: 15px;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            max-height: 75vh;
-            max-width: 90vw;
+        canvas {
+            background: #000; border: 3px solid var(--pipe);
+            border-radius: 15px; box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            max-height: 75vh; max-width: 90vw;
         }
-
-        .controls {
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-        }
-
+        .ui { margin-top: 20px; display: flex; gap: 10px; z-index: 10; }
         button {
-            padding: 12px 20px;
-            background: var(--pipe);
-            border: 2px solid var(--accent);
-            color: white;
-            border-radius: 10px;
-            font-weight: bold;
-            cursor: pointer;
+            padding: 15px 25px; background: var(--pipe); border: 2px solid var(--accent);
+            color: white; border-radius: 50px; font-weight: bold; cursor: pointer;
         }
+        #status { font-size: 1.5rem; margin-bottom: 10px; height: 35px; text-shadow: 0 0 10px var(--accent); }
     </style>
 </head>
 <body>
 
-    <h2 id="status" style="margin-bottom: 10px;">Tilt to Roll</h2>
+    <div id="status">Pipe Runner</div>
     <canvas id="game-canvas"></canvas>
 
-    <div class="controls">
-        <button onclick="initApp()">Start / Enable Tilt</button>
-        <button onclick="resetMaze()">Generate New</button>
+    <div class="ui">
+        <button id="startBtn">START & LOCK</button>
+        <button onclick="resetMaze()">NEW MAZE</button>
     </div>
 
     <script>
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
         
-        // Settings: 20% more complex than before
-        const COLS = 13; 
-        const ROWS = 19;
-        const TILE_SIZE = 25; // Smaller tiles for "zoom out" effect
-        
-        canvas.width = COLS * TILE_SIZE;
-        canvas.height = ROWS * TILE_SIZE;
+        const COLS = 13, ROWS = 19, TILE = 25;
+        canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        let maze = [];
-        let ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
-        let tilt = { x: 0, y: 0 };
-        let goal = { x: 0, y: 0 };
+        let maze = [], particles = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, gameActive = true;
+
+        // --- AUDIO SYSTEM ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, type, duration, vol) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
 
         function generateMaze() {
             maze = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
-            const stack = [{x: 1, y: 1}];
-            maze[1][1] = 0;
-
+            const stack = [{x: 1, y: 1}]; maze[1][1] = 0;
             while (stack.length > 0) {
                 const curr = stack[stack.length - 1];
                 const neighbors = [[0,2],[0,-2],[2,0],[-2,0]]
                     .map(([dx, dy]) => ({x: curr.x + dx, y: curr.y + dy, dx, dy}))
                     .filter(n => n.x > 0 && n.x < COLS-1 && n.y > 0 && n.y < ROWS-1 && maze[n.y][n.x] === 1)
                     .sort(() => Math.random() - 0.5);
-
                 if (neighbors.length > 0) {
                     const next = neighbors[0];
                     maze[next.y - next.dy/2][next.x - next.dx/2] = 0;
                     maze[next.y][next.x] = 0;
                     stack.push(next);
-                } else {
-                    stack.pop();
-                }
+                } else stack.pop();
             }
-            ball.x = TILE_SIZE * 1.5;
-            ball.y = TILE_SIZE * 1.5;
-            ball.vx = 0;
-            ball.vy = 0;
-            goal = { x: (COLS - 2) * TILE_SIZE + TILE_SIZE/2, y: (ROWS - 2) * TILE_SIZE + TILE_SIZE/2 };
+            ball.x = TILE * 1.5; ball.y = TILE * 1.5; ball.vx = 0; ball.vy = 0;
+            goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
+            gameActive = true; particles = [];
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw Pipes
-            for (let y = 0; y < ROWS; y++) {
-                for (let x = 0; x < COLS; x++) {
-                    if (maze[y][x] === 0) {
-                        ctx.fillStyle = '#1e293b';
-                        ctx.beginPath();
-                        ctx.roundRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 4);
-                        ctx.fill();
-                    }
-                }
+        function createParticles() {
+            for(let i=0; i<30; i++) {
+                particles.push({
+                    x: goal.x, y: goal.y,
+                    vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10,
+                    life: 1, color: `hsl(${Math.random()*360}, 100%, 50%)`
+                });
             }
-
-            // Draw Goal
-            ctx.fillStyle = '#4ade80';
-            ctx.beginPath();
-            ctx.arc(goal.x, goal.y, ball.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw Ball (Full Circle with 3D gradient)
-            const grad = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 1, ball.x, ball.y, ball.radius);
-            grad.addColorStop(0, '#7dd3fc');
-            grad.addColorStop(1, '#0369a1');
-            
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-            ctx.fill();
         }
 
         function update() {
-            ball.vx = (ball.vx + tilt.x * 0.4) * 0.92; // Smooth acceleration + friction
-            ball.vy = (ball.vy + tilt.y * 0.4) * 0.92;
+            if (gameActive) {
+                ball.vx = (ball.vx + tilt.x * 0.45) * 0.93;
+                ball.vy = (ball.vy + tilt.y * 0.45) * 0.93;
+                
+                let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
 
-            let nextX = ball.x + ball.vx;
-            let nextY = ball.y + ball.vy;
+                if (!isWall(nx, ball.y)) ball.x = nx; 
+                else { if(Math.abs(ball.vx) > 1) playTone(150, 'square', 0.1, 0.05); ball.vx *= -0.5; }
 
-            // Simple collision
-            if (!isWall(nextX, ball.y)) ball.x = nextX; else ball.vx *= -0.4;
-            if (!isWall(ball.x, nextY)) ball.y = nextY; else ball.vy *= -0.4;
+                if (!isWall(ball.x, ny)) ball.y = ny; 
+                else { if(Math.abs(ball.vy) > 1) playTone(150, 'square', 0.1, 0.05); ball.vy *= -0.5; }
 
-            // Check Win
-            const dist = Math.hypot(ball.x - goal.x, ball.y - goal.y);
-            if (dist < ball.radius * 1.5) {
-                document.getElementById('status').innerText = "Winner! 🎉";
+                if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) {
+                    gameActive = false;
+                    statusEl.innerText = "GOAL REACHED!";
+                    playTone(440, 'sine', 0.5, 0.1); setTimeout(() => playTone(660, 'sine', 0.8, 0.1), 150);
+                    createParticles();
+                }
             }
+
+            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; });
+            particles = particles.filter(p => p.life > 0);
 
             draw();
             requestAnimationFrame(update);
         }
 
-        function isWall(px, py) {
-            const buffer = ball.radius - 1;
-            const points = [
-                {x: px - buffer, y: py - buffer},
-                {x: px + buffer, y: py - buffer},
-                {x: px - buffer, y: py + buffer},
-                {x: px + buffer, y: py + buffer}
-            ];
-            return points.some(p => {
-                const gx = Math.floor(p.x / TILE_SIZE);
-                const gy = Math.floor(p.y / TILE_SIZE);
-                return !maze[gy] || maze[gy][gx] === 1;
+        function draw() {
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+            for (let y=0; y<ROWS; y++) {
+                for (let x=0; x<COLS; x++) {
+                    if (maze[y][x] === 0) {
+                        ctx.fillStyle = '#111827';
+                        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                    }
+                }
+            }
+            // Goal pulse
+            ctx.fillStyle = `rgba(74, 222, 128, ${0.5 + Math.sin(Date.now()/200)*0.3})`;
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius*1.5, 0, Math.PI*2); ctx.fill();
+
+            // Ball
+            const grad = ctx.createRadialGradient(ball.x-3, ball.y-3, 1, ball.x, ball.y, ball.radius);
+            grad.addColorStop(0, '#7dd3fc'); grad.addColorStop(1, '#0369a1');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
+
+            // Particles
+            particles.forEach(p => {
+                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
+                ctx.fillRect(p.x, p.y, 4, 4);
             });
+            ctx.globalAlpha = 1;
+        }
+
+        function isWall(px, py) {
+            const b = ball.radius - 1;
+            return [{x:px-b, y:py-b},{x:px+b, y:py-b},{x:px-b, y:py+b},{x:px+b, y:py+b}]
+                   .some(p => {
+                       let gx = Math.floor(p.x/TILE), gy = Math.floor(p.y/TILE);
+                       return !maze[gy] || maze[gy][gx] === 1;
+                   });
         }
 
         async function initApp() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            // Fullscreen & Orientation Lock
+            try {
+                if (document.documentElement.requestFullscreen) {
+                    await document.documentElement.requestFullscreen();
+                    if (screen.orientation && screen.orientation.lock) {
+                        await screen.orientation.lock('portrait').catch(e => console.log("Lock failed"));
+                    }
+                }
+            } catch (e) {}
+
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 const res = await DeviceOrientationEvent.requestPermission();
-                if (res === 'granted') window.addEventListener('deviceorientation', e => {
-                    tilt.x = e.gamma * 0.1;
-                    tilt.y = e.beta * 0.1;
-                });
+                if (res === 'granted') window.addEventListener('deviceorientation', handleTilt);
             } else {
-                window.addEventListener('deviceorientation', e => {
-                    tilt.x = e.gamma * 0.1;
-                    tilt.y = e.beta * 0.1;
-                });
+                window.addEventListener('deviceorientation', handleTilt);
             }
-            document.documentElement.requestFullscreen().catch(()=>{});
+            statusEl.innerText = "Rolling...";
         }
 
-        function resetMaze() {
-            generateMaze();
-            document.getElementById('status').innerText = "Tilt to Roll";
+        function handleTilt(e) {
+            tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
         }
 
-        generateMaze();
-        update();
+        function resetMaze() { generateMaze(); statusEl.innerText = "New Path Ready"; }
+
+        document.getElementById('startBtn').addEventListener('click', initApp);
+        generateMaze(); update();
     </script>
 </body>
 </html>
