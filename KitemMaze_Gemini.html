@@ -3,62 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pipe Runner: Modern Refine</title>
+    <title>Pipe Runner: Modern Seamless</title>
     <style>
         :root { 
-            --bg: #0f172a;           /* Deep Slate Ocean */
-            --pipe: #1e293b;         /* Muted Slate */
-            --accent: #2dd4bf;       /* Modern Teal/Mint */
-            --trap: #991b1b;         /* Deep Crimson */
-            --win: #a3e635;          /* Cyber Lime */
-            --player: #f8fafc;       /* Crisp White */
+            --bg: #0f172a; 
+            --pipe: #1e293b; 
+            --accent: #2dd4bf; 
+            --trap: #991b1b; 
+            --win: #a3e635; 
         }
 
         body {
             margin: 0; background: var(--bg); color: #f1f5f9;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+            font-family: 'Inter', system-ui, sans-serif; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             height: 100vh; overflow: hidden; touch-action: none;
             background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
         }
 
         canvas {
-            background: rgba(15, 23, 42, 0.8); 
+            background: rgba(15, 23, 42, 0.9); 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 24px; 
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            max-height: 65vh; max-width: 90vw;
-            backdrop-filter: blur(10px);
+            border-radius: 20px; 
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            max-height: 60vh; max-width: 90vw;
         }
 
-        .header { text-align: center; margin-bottom: 20px; }
+        .header { text-align: center; margin-bottom: 20px; padding: 0 20px; }
         #status { 
-            font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; margin: 0;
+            font-size: 1.8rem; font-weight: 800; letter-spacing: 0.05em; margin: 0;
             background: linear-gradient(to right, #2dd4bf, #3b82f6);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-        .intro { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; font-weight: 500; }
+        .intro { 
+            font-size: 0.9rem; color: #94a3b8; margin-top: 8px; 
+            font-weight: 400; line-height: 1.4; max-width: 300px; margin-left: auto; margin-right: auto;
+        }
         
         .ui { margin-top: 25px; display: flex; gap: 12px; }
         button {
             padding: 14px 28px; background: rgba(255,255,255,0.05); 
             border: 1px solid rgba(255,255,255,0.1);
-            color: #f1f5f9; border-radius: 16px; font-weight: 600; cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(5px); font-size: 0.9rem;
+            color: #f1f5f9; border-radius: 12px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; backdrop-filter: blur(5px); min-width: 120px;
         }
 
-        button#toggleBtn.playing {
-            background: rgba(45, 212, 191, 0.1);
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
+        button#toggleBtn.playing { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.05); }
         button:active { transform: scale(0.95); }
 
         .flash { animation: flashbang 0.5s ease-out; }
         @keyframes flashbang {
-            0% { filter: brightness(5); transform: scale(1.02); }
+            0% { filter: brightness(8); transform: scale(1.05); }
             100% { filter: brightness(1); transform: scale(1); }
         }
     </style>
@@ -67,7 +62,7 @@
 
     <div class="header">
         <h1 id="status">PIPE RUNNER</h1>
-        <p class="intro">Precision tilt navigation</p>
+        <p class="intro">Tilt your phone to roll the ball and reach the destination</p>
     </div>
 
     <canvas id="game-canvas"></canvas>
@@ -134,15 +129,13 @@
         }
 
         function createFirework(x, y) {
-            for(let i=0; i<80; i++) {
+            for(let i=0; i<120; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 6 + 1;
+                const speed = Math.random() * 8 + 2;
                 fireworks.push({
-                    x: x, y: y,
-                    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                    life: 1, size: Math.random() * 2 + 1,
-                    color: i % 2 === 0 ? '#2dd4bf' : '#a3e635',
-                    gravity: 0.1
+                    x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    life: 1, size: Math.random() * 3 + 1,
+                    color: i % 2 === 0 ? '#2dd4bf' : '#a3e635', gravity: 0.15
                 });
             }
         }
@@ -151,15 +144,20 @@
             isPlaying = false;
             toggleBtn.innerText = "PLAY";
             toggleBtn.classList.remove('playing');
-            statusEl.innerText = "COURSE CLEAR";
+            statusEl.innerText = "SUCCESS";
             canvas.classList.add('flash');
-            playSound(400, 'sine', 0.4, 0.1, 800);
+            playSound(300, 'sine', 0.5, 0.1, 1000);
             createFirework(goal.x, goal.y);
+            setTimeout(() => {
+                createFirework(goal.x - 25, goal.y - 25);
+                createFirework(goal.x + 25, goal.y - 25);
+                playSound(200, 'square', 0.3, 0.05);
+            }, 250);
             setTimeout(() => canvas.classList.remove('flash'), 500);
         }
 
         function triggerTrap() {
-            canvas.style.filter = "contrast(2) brightness(0.5) saturate(2)";
+            canvas.style.filter = "brightness(0.4) sepia(1) hue-rotate(-60deg)";
             playSound(400, 'sawtooth', 0.2, 0.1, 40);
             let rx, ry;
             do { rx = Math.floor(Math.random() * COLS); ry = Math.floor(Math.random() * ROWS); } while (maze[ry][rx] !== 0);
@@ -180,7 +178,7 @@
                 });
                 if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) triggerVictory();
             }
-            fireworks.forEach(f => { f.x += f.vx; f.y += f.vy; f.vy += f.gravity; f.life -= 0.015; });
+            fireworks.forEach(f => { f.x += f.vx; f.y += f.vy; f.vy += f.gravity; f.life -= 0.012; });
             fireworks = fireworks.filter(f => f.life > 0);
             draw();
             requestAnimationFrame(update);
@@ -189,32 +187,34 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Draw Maze Pipes
-            for (let y = 0; y < ROWS; y++) {
-                for (let x = 0; x < COLS; x++) {
-                    if (maze[y][x] === 0) {
-                        ctx.fillStyle = '#1e293b';
-                        ctx.beginPath();
-                        ctx.roundRect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4, 6);
-                        ctx.fill();
-                    }
-                }
-            }
+            // Draw Continuous Pipes with 3D Indent effect
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            
+            // 1. Darker Outer Stroke (Inner Shadow effect)
+            ctx.strokeStyle = '#111827';
+            ctx.lineWidth = TILE - 2;
+            drawPipes();
 
-            // Traps (Deep Scarlet)
+            // 2. Main Pipe Fill
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = TILE - 6;
+            drawPipes();
+
+            // Traps
             traps.forEach(t => {
                 ctx.fillStyle = '#991b1b';
                 ctx.beginPath(); ctx.arc(t.x, t.y, ball.radius * 1.1, 0, Math.PI*2); ctx.fill();
             });
 
-            // Goal (Cyber Lime)
-            const pulse = 0.5 + Math.sin(Date.now()/600) * 0.2;
-            ctx.shadowBlur = 15; ctx.shadowColor = '#a3e635';
+            // Goal
+            const pulse = 0.5 + Math.sin(Date.now()/700) * 0.2;
+            ctx.shadowBlur = 20; ctx.shadowColor = '#a3e635';
             ctx.fillStyle = `rgba(163, 230, 53, ${pulse})`;
-            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 1.8, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2, 0, Math.PI*2); ctx.fill();
             ctx.shadowBlur = 0;
 
-            // Player (Sleek White Sphere)
+            // Player
             const grad = ctx.createRadialGradient(ball.x-2, ball.y-2, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#94a3b8');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
@@ -225,6 +225,28 @@
                 ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI*2); ctx.fill();
             });
             ctx.globalAlpha = 1;
+        }
+
+        function drawPipes() {
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (maze[y][x] === 0) {
+                        const px = x * TILE + TILE/2;
+                        const py = y * TILE + TILE/2;
+                        [[0,1],[1,0],[0,-1],[-1,0]].forEach(([dx, dy]) => {
+                            let nx = x + dx, ny = y + dy;
+                            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && maze[ny][nx] === 0) {
+                                ctx.beginPath();
+                                ctx.moveTo(px, py);
+                                ctx.lineTo(nx * TILE + TILE/2, ny * TILE + TILE/2);
+                                ctx.stroke();
+                            }
+                        });
+                        // Center Cap
+                        ctx.beginPath(); ctx.arc(px, py, ctx.lineWidth/2, 0, Math.PI*2); ctx.fill();
+                    }
+                }
+            }
         }
 
         function isWall(px, py) {
@@ -252,11 +274,10 @@
             toggleBtn.innerText = isPlaying ? "PAUSE" : "PLAY";
             if (isPlaying) toggleBtn.classList.add('playing');
             else toggleBtn.classList.remove('playing');
-            statusEl.innerText = isPlaying ? "ROLLING..." : "PIPE RUNNER";
         }
 
         function startSensors() { window.addEventListener('deviceorientation', e => { tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12; }); }
-        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; isPlaying = false; toggleBtn.innerText = "PLAY"; toggleBtn.classList.remove('playing'); }
+        function resetMaze() { generateMaze(); isPlaying = false; toggleBtn.innerText = "PLAY"; toggleBtn.classList.remove('playing'); statusEl.innerText = "PIPE RUNNER"; }
 
         toggleBtn.addEventListener('click', toggleHandler);
         generateMaze(); update();
