@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pipe Runner: Scarlet Traps</title>
+    <title>Pipe Runner: Toggle Edition</title>
     <style>
-        :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --trap: #560319; }
+        :root { --void: #020617; --pipe: #1e293b; --accent: #38bdf8; --trap: #560319; --win: #4ade80; }
         body {
             margin: 0; background: var(--void); color: white;
             font-family: system-ui, sans-serif; display: flex;
@@ -15,8 +15,7 @@
         canvas {
             background: #000; border: 3px solid var(--pipe);
             border-radius: 15px; box-shadow: 0 0 40px rgba(0,0,0,0.9);
-            max-height: 70vh; max-width: 90vw;
-            transition: filter 0.2s;
+            max-height: 70vh; max-width: 90vw; transition: filter 0.2s;
         }
         .header { text-align: center; margin-bottom: 10px; }
         #status { font-size: 1.8rem; font-weight: bold; margin: 0; text-shadow: 0 0 10px var(--accent); }
@@ -25,12 +24,20 @@
         .ui { margin-top: 15px; display: flex; gap: 15px; }
         button {
             padding: 15px 35px; background: var(--pipe); border: 2px solid var(--accent);
-            color: white; border-radius: 50px; font-weight: bold; cursor: pointer;
-            transition: all 0.2s;
+            color: white; border-radius: 50px; font-weight: bold; cursor: pointer; min-width: 120px;
         }
-        button.active {
-            background: var(--accent); color: var(--void);
-            box-shadow: 0 0 20px var(--accent); border-color: white;
+        /* Style for PAUSE state */
+        button.playing {
+            background: #0f172a; border-color: #ef4444; color: #ef4444;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+        
+        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
         }
     </style>
 </head>
@@ -38,13 +45,13 @@
 
     <div class="header">
         <h1 id="status">Pipe Runner</h1>
-        <p class="intro">Tilt your phone to roll. Avoid scarlet traps!</p>
+        <p class="intro">Tilt to roll. Avoid scarlet traps!</p>
     </div>
 
     <canvas id="game-canvas"></canvas>
 
     <div class="ui">
-        <button id="startBtn">PLAY</button>
+        <button id="toggleBtn">PLAY</button>
         <button onclick="resetMaze()">NEW MAZE</button>
     </div>
 
@@ -52,34 +59,29 @@
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
         const statusEl = document.getElementById('status');
-        const startBtn = document.getElementById('startBtn');
+        const toggleBtn = document.getElementById('toggleBtn');
         
         const COLS = 13, ROWS = 19, TILE = 25;
         canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        let maze = [], traps = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
-        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, gameActive = false;
+        let maze = [], traps = [], particles = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false, timeScale = 1;
 
-        // --- FIXED AUDIO ENGINE ---
         let audioCtx;
         function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
         function playSound(freq, type, duration, vol, endFreq = null) {
-            if (!audioCtx) return;
+            if (!audioCtx || audioCtx.state === 'suspended') return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
-            
             gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            
             osc.connect(gain); gain.connect(audioCtx.destination);
             osc.start(); osc.stop(audioCtx.currentTime + duration);
         }
@@ -88,7 +90,6 @@
             maze = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
             const stack = [{x: 1, y: 1}]; maze[1][1] = 0;
             const paths = [];
-
             while (stack.length > 0) {
                 const curr = stack[stack.length - 1];
                 const neighbors = [[0,2],[0,-2],[2,0],[-2,0]]
@@ -103,62 +104,70 @@
                     stack.push(next);
                 } else stack.pop();
             }
-
-            // Traps: Solid Dark Scarlet
             traps = [];
             for(let i=0; i<4; i++) {
                 let p = paths[Math.floor(Math.random() * paths.length)];
                 traps.push({ x: p.x * TILE + TILE/2, y: p.y * TILE + TILE/2 });
             }
-
             ball.x = TILE * 1.5; ball.y = TILE * 1.5; ball.vx = 0; ball.vy = 0;
             goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
+            particles = []; timeScale = 1;
+        }
+
+        function triggerVictory() {
+            isPlaying = false;
+            toggleBtn.innerText = "PLAY";
+            toggleBtn.classList.remove('playing');
+            timeScale = 0.1;
+            statusEl.innerText = "⭐ LEGENDARY ⭐";
+            statusEl.style.color = "var(--win)";
+            canvas.classList.add('shake');
+            playSound(200, 'sine', 1, 0.2, 800); 
+            for(let i=0; i<60; i++) {
+                particles.push({
+                    x: ball.x, y: ball.y,
+                    vx: (Math.random()-0.5) * 15, vy: (Math.random()-0.5) * 15,
+                    size: Math.random() * 5 + 2,
+                    color: `hsl(${Math.random()*360}, 100%, 60%)`, life: 1
+                });
+            }
+            setTimeout(() => { canvas.classList.remove('shake'); timeScale = 1; }, 1000);
         }
 
         function triggerTrap() {
-            canvas.style.filter = "invert(1) sepia(1) saturate(5) hue-rotate(-50deg)";
-            playSound(600, 'sawtooth', 0.4, 0.1, 50); // Deep warp sound
-            
-            let found = false;
-            while(!found) {
-                let rx = Math.floor(Math.random() * COLS);
-                let ry = Math.floor(Math.random() * ROWS);
-                if(maze[ry][rx] === 0) {
-                    ball.x = rx * TILE + TILE/2;
-                    ball.y = ry * TILE + TILE/2;
-                    ball.vx = 0; ball.vy = 0;
-                    found = true;
-                }
-            }
-            setTimeout(() => canvas.style.filter = "", 250);
+            canvas.style.filter = "invert(1) brightness(2)";
+            playSound(600, 'sawtooth', 0.3, 0.1, 50);
+            let rx, ry;
+            do {
+                rx = Math.floor(Math.random() * COLS);
+                ry = Math.floor(Math.random() * ROWS);
+            } while (maze[ry][rx] !== 0);
+            ball.x = rx * TILE + TILE/2; ball.y = ry * TILE + TILE/2;
+            ball.vx = 0; ball.vy = 0;
+            setTimeout(() => canvas.style.filter = "", 150);
         }
 
         function update() {
-            if (gameActive) {
+            if (isPlaying) {
                 ball.vx = (ball.vx + tilt.x * 0.45) * 0.93;
                 ball.vy = (ball.vy + tilt.y * 0.45) * 0.93;
                 
-                let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
+                let nx = ball.x + (ball.vx * timeScale);
+                let ny = ball.y + (ball.vy * timeScale);
 
                 if (!isWall(nx, ball.y)) ball.x = nx; else ball.vx *= -0.5;
                 if (!isWall(ball.x, ny)) ball.y = ny; else ball.vy *= -0.5;
 
-                // Collision with Scarlet Traps
                 traps.forEach(t => {
-                    if (Math.hypot(ball.x - t.x, ball.y - t.y) < ball.radius * 1.2) {
-                        triggerTrap();
-                    }
+                    if (Math.hypot(ball.x - t.x, ball.y - t.y) < ball.radius * 1.2) triggerTrap();
                 });
 
-                // Check Goal
-                if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) {
-                    gameActive = false;
-                    statusEl.innerText = "VICTORY!";
-                    playSound(523, 'sine', 0.3, 0.1); 
-                    setTimeout(() => playSound(783, 'sine', 0.6, 0.1), 150);
-                    startBtn.classList.remove('active');
-                }
+                if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) triggerVictory();
             }
+
+            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.015; });
+            particles = particles.filter(p => p.life > 0);
+
             draw();
             requestAnimationFrame(update);
         }
@@ -170,26 +179,23 @@
                     if (maze[y][x] === 0) { ctx.fillStyle = '#111827'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE); }
                 }
             }
-            // Scarlet Traps (No blink, solid color)
             traps.forEach(t => {
-                ctx.fillStyle = '#560319';
-                ctx.beginPath(); 
-                ctx.arc(t.x, t.y, ball.radius * 1.3, 0, Math.PI*2); 
-                ctx.fill();
-                // Add a small inner shadow/glow for a "hole" look
-                ctx.strokeStyle = '#2d010d';
-                ctx.lineWidth = 2;
-                ctx.stroke();
+                ctx.fillStyle = '#560319'; ctx.beginPath(); ctx.arc(t.x, t.y, ball.radius * 1.3, 0, Math.PI*2); ctx.fill();
             });
 
-            // Goal
-            ctx.fillStyle = `rgba(74, 222, 128, ${0.4 + Math.sin(Date.now()/150)*0.2})`;
-            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius*1.8, 0, Math.PI*2); ctx.fill();
+            const pulse = 0.4 + Math.sin(Date.now()/500) * 0.15;
+            ctx.fillStyle = `rgba(74, 222, 128, ${pulse})`;
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2, 0, Math.PI*2); ctx.fill();
 
-            // Ball
             const grad = ctx.createRadialGradient(ball.x-3, ball.y-3, 1, ball.x, ball.y, ball.radius);
             grad.addColorStop(0, '#7dd3fc'); grad.addColorStop(1, '#0369a1');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
+
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+            });
+            ctx.globalAlpha = 1;
         }
 
         function isWall(px, py) {
@@ -201,34 +207,58 @@
                    });
         }
 
-        async function playHandler() {
+        async function toggleHandler() {
             initAudio();
-            startBtn.classList.add('active');
-            gameActive = true;
-            statusEl.innerText = "ROLLING...";
             
+            // Screen Lock Logic
             try {
-                if (document.documentElement.requestFullscreen) {
-                    await document.documentElement.requestFullscreen();
-                    if (screen.orientation.lock) await screen.orientation.lock('portrait').catch(()=>{});
+                if (!document.fullscreenElement) {
+                    if (document.documentElement.requestFullscreen) {
+                        await document.documentElement.requestFullscreen();
+                    }
+                }
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('portrait').catch(()=>{});
                 }
             } catch (e) {}
 
+            // Permissions Logic
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 const res = await DeviceOrientationEvent.requestPermission();
-                if (res === 'granted') window.addEventListener('deviceorientation', handleTilt);
+                if (res === 'granted') startSensors();
             } else {
-                window.addEventListener('deviceorientation', handleTilt);
+                startSensors();
+            }
+
+            // Toggle Behavior
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                toggleBtn.innerText = "PAUSE";
+                toggleBtn.classList.add('playing');
+                statusEl.innerText = "ROLLING...";
+            } else {
+                toggleBtn.innerText = "PLAY";
+                toggleBtn.classList.remove('playing');
+                statusEl.innerText = "PAUSED";
             }
         }
 
-        function handleTilt(e) {
-            tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
+        function startSensors() {
+            window.addEventListener('deviceorientation', e => {
+                tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12;
+            });
         }
 
-        function resetMaze() { generateMaze(); statusEl.innerText = "PIPE RUNNER"; startBtn.classList.remove('active'); gameActive = false;}
+        function resetMaze() { 
+            generateMaze(); 
+            statusEl.innerText = "PIPE RUNNER"; 
+            statusEl.style.color = "white"; 
+            isPlaying = false;
+            toggleBtn.innerText = "PLAY";
+            toggleBtn.classList.remove('playing');
+        }
 
-        startBtn.addEventListener('click', playHandler);
+        toggleBtn.addEventListener('click', toggleHandler);
         generateMaze(); update();
     </script>
 </body>
