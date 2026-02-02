@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gyro-Kitem Maze</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --wall-color: #1e293b;
+            --path-color: #334155;
+            --player-color: #38bdf8;
+            --goal-color: #4ade80;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-color);
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .header { text-align: center; margin-bottom: 15px; }
+        h1 { margin: 0; font-size: 1.5rem; color: var(--player-color); }
+        p { margin: 5px 0; font-size: 0.9rem; opacity: 0.8; }
+
+        #maze-container {
+            display: grid;
+            gap: 2px;
+            background: var(--wall-color);
+            padding: 8px;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        .cell {
+            width: 8vw;
+            height: 8vw;
+            max-width: 35px;
+            max-height: 35px;
+            background: var(--path-color);
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .wall { background: var(--wall-color); }
+        .player { 
+            background: var(--player-color); 
+            box-shadow: 0 0 15px var(--player-color);
+            transform: scale(0.9);
+            border-radius: 50%; /* Makes player look like a ball */
+        }
+        .goal { background: var(--goal-color); box-shadow: 0 0 15px var(--goal-color); }
+
+        .controls-overlay {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: #1e293b;
+            border: 2px solid var(--player-color);
+            color: white;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #tilt-status {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Kitem Maze</h1>
+        <p id="status">Tilt your phone or use keys!</p>
+    </div>
+
+    <div id="maze-container"></div>
+
+    <div class="controls-overlay">
+        <button class="btn" onclick="requestGyro()">Enable Tilt Controls</button>
+        <button class="btn" style="border-color: #94a3b8;" onclick="resetGame()">Reset</button>
+    </div>
+
+    <div id="tilt-status">Tilt: Off</div>
+
+    <script>
+        const mazeLayout = [
+            [1,1,1,1,1,1,1,1,1,1,1],
+            [1,2,0,0,0,1,0,0,0,0,1],
+            [1,1,1,1,0,1,0,1,1,0,1],
+            [1,0,0,0,0,0,0,1,0,0,1],
+            [1,0,1,1,1,1,1,1,0,1,1],
+            [1,0,1,0,0,0,0,0,0,0,1],
+            [1,0,1,0,1,1,1,1,1,0,1],
+            [1,0,0,0,1,0,0,0,0,3,1],
+            [1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        let maze = JSON.parse(JSON.stringify(mazeLayout));
+        let playerPos = { x: 1, y: 1 };
+        let lastMove = 0;
+        const moveDelay = 200; // ms
+
+        function render() {
+            const container = document.getElementById('maze-container');
+            container.innerHTML = '';
+            container.style.gridTemplateColumns = `repeat(${maze[0].length}, 1fr)`;
+
+            maze.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    const div = document.createElement('div');
+                    div.className = 'cell';
+                    if (cell === 1) div.classList.add('wall');
+                    if (cell === 2) div.classList.add('player');
+                    if (cell === 3) div.classList.add('goal');
+                    container.appendChild(div);
+                });
+            });
+        }
+
+        function move(dx, dy) {
+            const now = Date.now();
+            if (now - lastMove < moveDelay) return;
+
+            let newX = playerPos.x + dx;
+            let newY = playerPos.y + dy;
+
+            if (maze[newY] && maze[newY][newX] !== 1) {
+                if (maze[newY][newX] === 3) {
+                    document.getElementById('status').innerText = "Level Clear! 🎉";
+                    document.getElementById('status').style.color = "var(--goal-color)";
+                }
+                
+                maze[playerPos.y][playerPos.x] = 0;
+                playerPos.x = newX;
+                playerPos.y = newY;
+                maze[playerPos.y][playerPos.x] = 2;
+                lastMove = now;
+                render();
+            }
+        }
+
+        // --- GYROSCOPE LOGIC ---
+        function requestGyro() {
+            // Check for iOS 13+ permissions
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(state => {
+                        if (state === 'granted') {
+                            startTracking();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Android or older browsers
+                startTracking();
+            }
+        }
+
+        function startTracking() {
+            window.addEventListener('deviceorientation', (e) => {
+                const tiltX = e.gamma; // Left/Right (-90 to 90)
+                const tiltY = e.beta;  // Front/Back (-180 to 180)
+                
+                document.getElementById('tilt-status').innerText = `Tilt: X(${Math.round(tiltX)}), Y(${Math.round(tiltY)})`;
+
+                const threshold = 15;
+                if (tiltY > threshold) move(0, 1);       // Tilt Down
+                else if (tiltY < -threshold) move(0, -1); // Tilt Up
+                
+                if (tiltX > threshold) move(1, 0);       // Tilt Right
+                else if (tiltX < -threshold) move(-1, 0); // Tilt Left
+            });
+            document.querySelector('.btn').innerText = "Tilt Active";
+        }
+
+        function resetGame() {
+            maze = JSON.parse(JSON.stringify(mazeLayout));
+            playerPos = { x: 1, y: 1 };
+            document.getElementById('status').innerText = "Tilt your phone or use keys!";
+            document.getElementById('status').style.color = "white";
+            render();
+        }
+
+        // Keyboard Fallback
+        window.addEventListener('keydown', (e) => {
+            if (e.key === "ArrowUp") move(0, -1);
+            if (e.key === "ArrowDown") move(0, 1);
+            if (e.key === "ArrowLeft") move(-1, 0);
+            if (e.key === "ArrowRight") move(1, 0);
+        });
+
+        render();
+    </script>
+</body>
+</html>
