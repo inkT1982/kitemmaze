@@ -3,152 +3,213 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pipe Runner: Sphere 3D</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <title>Pipe Runner: Glass Floor</title>
     <style>
-        :root { --bg: #0f172a; --accent: #2dd4bf; }
+        :root { 
+            --bg: #0f172a; 
+            --accent: #3b82f6; 
+        }
+
         body {
             margin: 0; background: var(--bg); color: #f1f5f9;
-            font-family: 'Inter', sans-serif; overflow: hidden;
-            display: flex; flex-direction: column; align-items: center;
+            font-family: 'Inter', sans-serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden; touch-action: none;
+            perspective: 1200px;
+            /* Background gradient that shows through the glass floor */
+            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #080c14 100%);
         }
-        #ui-layer {
-            position: absolute; top: 20px; text-align: center; z-index: 10;
-            pointer-events: none;
+
+        .header { text-align: center; margin-bottom: 20px; z-index: 10; }
+        #status { 
+            font-size: 1.6rem; font-weight: 800; margin: 0;
+            background: linear-gradient(to right, #2dd4bf, #3b82f6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-        #controls {
-            position: absolute; bottom: 40px; display: flex; gap: 15px; z-index: 10;
+
+        .game-wrapper {
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(30deg) rotateZ(-10deg);
+            transition: transform 0.5s ease;
         }
-        h1 { font-size: 1.5rem; letter-spacing: 0.1em; margin: 0; color: var(--accent); }
-        .intro { font-size: 0.8rem; color: #94a3b8; margin-top: 5px; }
+
+        canvas {
+            /* This makes the "Base" transparent */
+            background: rgba(30, 41, 59, 0.4); 
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 24px;
+            /* Glassmorphism effect */
+            backdrop-filter: blur(4px);
+            box-shadow: 
+                20px 30px 50px rgba(0,0,0,0.5),
+                inset 0 0 20px rgba(255,255,255,0.05);
+            max-height: 65vh; max-width: 90vw;
+        }
+
+        .ui { margin-top: 40px; display: flex; gap: 12px; z-index: 10; }
         button {
-            padding: 12px 25px; background: rgba(255,255,255,0.1); 
-            border: 1px solid rgba(255,255,255,0.2); color: white;
-            border-radius: 12px; font-weight: 600; cursor: pointer;
-            backdrop-filter: blur(10px); pointer-events: auto;
+            padding: 14px 28px; background: rgba(255,255,255,0.05); 
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f1f5f9; border-radius: 12px; font-weight: 600; cursor: pointer;
+            backdrop-filter: blur(10px);
         }
-        button.playing { border-color: #ef4444; color: #ef4444; }
+
+        /* Hole/Portal Pulsing Effect */
+        @keyframes portalGlow {
+            0% { box-shadow: 0 0 10px #3b82f6; }
+            50% { box-shadow: 0 0 30px #3b82f6; }
+            100% { box-shadow: 0 0 10px #3b82f6; }
+        }
     </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <h1 id="status">SPHERE RUNNER</h1>
-        <p class="intro">Tilt to rotate the world. Reach the green pole.</p>
+    <div class="header">
+        <h1 id="status">PIPE RUNNER</h1>
+        <div id="layer-text" style="color: #94a3b8; font-size: 0.9rem; margin-top: 5px;">FLOOR 1: THE SURFACE</div>
     </div>
 
-    <div id="controls">
+    <div class="game-wrapper">
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <div class="ui">
         <button id="toggleBtn">PLAY</button>
-        <button onclick="location.reload()">NEW WORLD</button>
+        <button onclick="resetGame()">RESET</button>
     </div>
 
     <script>
-        let scene, camera, renderer, globe, ball, goal;
-        let isPlaying = false;
-        let rotationTarget = { x: 0, y: 0 };
-        const BALL_RADIUS = 0.05;
-        const GLOBE_RADIUS = 2;
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const toggleBtn = document.getElementById('toggleBtn');
+        
+        const COLS = 13, ROWS = 19, TILE = 29; 
+        canvas.width = COLS * TILE; canvas.height = ROWS * TILE;
 
-        // Maze Generation logic wrapped for Sphere
-        function init() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+        let maze = [], traps = [], ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false;
+        let currentLayer = 1;
 
-            // Lighting
-            const light = new THREE.DirectionalLight(0xffffff, 1);
-            light.position.set(5, 5, 5).normalize();
-            scene.add(light);
-            scene.add(new THREE.AmbientLight(0x404040, 2));
+        function generateMaze(layer) {
+            maze = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
+            const stack = [{x: 1, y: 1}]; maze[1][1] = 0;
+            const paths = [];
+            
+            while (stack.length > 0) {
+                const curr = stack[stack.length - 1];
+                const neighbors = [[0,2],[0,-2],[2,0],[-2,0]].map(([dx, dy]) => ({x: curr.x + dx, y: curr.y + dy, dx, dy}))
+                    .filter(n => n.x > 0 && n.x < COLS-1 && n.y > 0 && n.y < ROWS-1 && maze[n.y][n.x] === 1)
+                    .sort(() => Math.random() - 0.5);
+                if (neighbors.length > 0) {
+                    const next = neighbors[0];
+                    maze[next.y - next.dy/2][next.x - next.dx/2] = 0; maze[next.y][next.x] = 0;
+                    paths.push({x: next.x, y: next.y}); stack.push(next);
+                } else stack.pop();
+            }
 
-            // Create Globe
-            const geometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
-            const material = new THREE.MeshPhongMaterial({ color: 0x1e293b, transparent: true, opacity: 0.9 });
-            globe = new THREE.Mesh(geometry, material);
-            scene.add(globe);
+            traps = [];
+            const trapCount = layer === 1 ? 4 : 8;
+            for(let i=0; i < trapCount; i++) {
+                let p = paths[Math.floor(Math.random() * paths.length)];
+                traps.push({ x: p.x * TILE + TILE/2, y: p.y * TILE + TILE/2 });
+            }
 
-            // Add "Pipes" (Wireframe overlay for the maze)
-            const wireGeometry = new THREE.SphereGeometry(GLOBE_RADIUS + 0.01, 32, 32);
-            const wireMaterial = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, wireframe: true, transparent: true, opacity: 0.2 });
-            const grid = new THREE.Mesh(wireGeometry, wireMaterial);
-            globe.add(grid);
-
-            // Ball
-            const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-            const ballMat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x3b82f6 });
-            ball = new THREE.Mesh(ballGeo, ballMat);
-            ball.position.set(0, GLOBE_RADIUS + BALL_RADIUS, 0);
-            scene.add(ball);
-
-            // Goal
-            const goalGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 32);
-            const goalMat = new THREE.MeshBasicMaterial({ color: 0xa3e635 });
-            goal = new THREE.Mesh(goalGeo, goalMat);
-            // Place goal on the opposite side
-            goal.position.set(0, -(GLOBE_RADIUS), 0);
-            globe.add(goal);
-
-            camera.position.z = 5;
-            animate();
+            ball.x = TILE * 1.5; ball.y = TILE * 1.5; ball.vx = 0; ball.vy = 0;
+            goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-
+        function update() {
             if (isPlaying) {
-                // Smoothly rotate globe based on tilt
-                globe.rotation.x += (rotationTarget.x - globe.rotation.x) * 0.05;
-                globe.rotation.y += (rotationTarget.y - globe.rotation.y) * 0.05;
+                ball.vx = (ball.vx + tilt.x * 0.45) * 0.93;
+                ball.vy = (ball.vy + tilt.y * 0.45) * 0.93;
+                let nx = ball.x + ball.vx, ny = ball.y + ball.vy;
+                if (!isWall(nx, ball.y)) ball.x = nx; else ball.vx *= -0.4;
+                if (!isWall(ball.x, ny)) ball.y = ny; else ball.vy *= -0.4;
 
-                // Win check (simplified for 3D distance)
-                const ballWorldPos = new THREE.Vector3();
-                ball.getWorldPosition(ballWorldPos);
-                const goalWorldPos = new THREE.Vector3();
-                goal.getWorldPosition(goalWorldPos);
+                traps.forEach(t => {
+                    if (Math.hypot(ball.x - t.x, ball.y - t.y) < ball.radius * 1.2) {
+                        ball.x = TILE * 1.5; ball.y = TILE * 1.5;
+                    }
+                });
 
-                if (ballWorldPos.distanceTo(goalWorldPos) < 0.3) {
-                    document.getElementById('status').innerText = "SUCCESS!";
-                    isPlaying = false;
+                if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.5) {
+                    if(currentLayer === 1) {
+                        currentLayer = 2;
+                        document.getElementById('layer-text').innerText = "FLOOR 2: THE VAULT";
+                        generateMaze(2);
+                    } else {
+                        isPlaying = false;
+                        statusEl.innerText = "MISSION CLEAR";
+                    }
                 }
             }
-
-            renderer.render(scene, camera);
+            draw();
+            requestAnimationFrame(update);
         }
 
-        // Handle Controls
-        const toggleBtn = document.getElementById('toggleBtn');
-        toggleBtn.addEventListener('click', async () => {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                const res = await DeviceOrientationEvent.requestPermission();
-                if (res !== 'granted') return;
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Pipes (Solid, not transparent)
+            ctx.lineCap = "round"; ctx.lineJoin = "round";
+            ctx.beginPath();
+            ctx.strokeStyle = currentLayer === 1 ? '#1e293b' : '#0a0f1a';
+            ctx.lineWidth = TILE - 4;
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (maze[y][x] === 0) {
+                        const px = x * TILE + TILE/2, py = y * TILE + TILE/2;
+                        [[0,1],[1,0]].forEach(([dx, dy]) => {
+                            let nx = x + dx, ny = y + dy;
+                            if (nx < COLS && ny < ROWS && maze[ny][nx] === 0) {
+                                ctx.moveTo(px, py); ctx.lineTo(nx * TILE + TILE/2, ny * TILE + TILE/2);
+                            }
+                        });
+                        ctx.moveTo(px, py); ctx.lineTo(px, py);
+                    }
+                }
             }
+            ctx.stroke();
 
+            // Goal
+            ctx.fillStyle = currentLayer === 1 ? '#3b82f6' : '#a3e635';
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, ball.radius * 2, 0, Math.PI*2); ctx.fill();
+
+            // Traps
+            ctx.fillStyle = '#ef4444';
+            traps.forEach(t => { ctx.beginPath(); ctx.arc(t.x, t.y, 5, 0, Math.PI*2); ctx.fill(); });
+
+            // Ball
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        function isWall(px, py) {
+            const b = ball.radius - 2;
+            return [{x:px-b, y:py-b},{x:px+b, y:py-b},{x:px-b, y:py+b},{x:px+b, y:py+b}].some(p => {
+                let gx = Math.floor(p.x/TILE), gy = Math.floor(p.y/TILE);
+                return !maze[gy] || maze[gy][gx] === 1;
+            });
+        }
+
+        function resetGame() { currentLayer = 1; generateMaze(1); isPlaying = false; }
+        
+        toggleBtn.addEventListener('click', () => {
+            if (statusEl.innerText === "MISSION CLEAR") location.reload();
             isPlaying = !isPlaying;
             toggleBtn.innerText = isPlaying ? "PAUSE" : "PLAY";
-            toggleBtn.className = isPlaying ? "playing" : "";
-            
-            // Lock Screen Rotation (Simulated by handling orientation)
-            if (screen.orientation && screen.orientation.lock) {
-                screen.orientation.lock('portrait').catch(() => {});
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission();
             }
         });
 
-        window.addEventListener('deviceorientation', (e) => {
-            if (!isPlaying) return;
-            // Map tilt to rotation targets
-            rotationTarget.y = (e.gamma * Math.PI) / 180;
-            rotationTarget.x = (e.beta * Math.PI) / 180;
-        });
+        window.addEventListener('deviceorientation', e => { tilt.x = e.gamma * 0.12; tilt.y = e.beta * 0.12; });
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        init();
+        generateMaze(1); update();
     </script>
 </body>
 </html>
