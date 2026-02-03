@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pipe Runner Enhanced</title>
+    <style>
+        :root { 
+            --bg: #0f172a; 
+            --pipe: #1e293b; 
+            --accent: #2dd4bf; 
+            --trap: #991b1b; 
+            --win: #a3e635; 
+        }
+
+        * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        body {
+            margin: 0; 
+            background: #0a0f1a; 
+            color: #f1f5f9;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center;
+            min-height: 100vh; 
+            overflow: hidden; 
+            touch-action: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            background: #0a0f1a; 
+            border: 2px solid rgba(45, 212, 191, 0.3);
+            border-radius: 24px; 
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+            max-height: 70vh; 
+            max-width: 90vw;
+            width: auto;
+            height: auto;
+            image-rendering: crisp-edges;
+        }
+
+        .header { 
+            text-align: center; 
+            margin-bottom: 12px; 
+            padding: 0 20px; 
+        }
+        
+        #status { 
+            font-size: 1.5rem; 
+            font-weight: 800; 
+            letter-spacing: 0.05em; 
+            margin: 0;
+            background: linear-gradient(to right, #2dd4bf, #3b82f6);
+            -webkit-background-clip: text; 
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(45, 212, 191, 0.3);
+        }
+        
+        .intro { 
+            font-size: 0.8rem; 
+            color: #94a3b8; 
+            margin-top: 4px; 
+            font-weight: 400; 
+            line-height: 1.3; 
+            max-width: 320px; 
+            margin-left: auto; 
+            margin-right: auto;
+        }
+        
+        .ui { 
+            margin-top: 12px; 
+            margin-bottom: 12px;
+            display: flex; 
+            gap: 10px; 
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 5px;
+        }
+        
+        button {
+            padding: 10px 20px; 
+            background: #1e293b; 
+            border: 2px solid #2dd4bf;
+            color: #ffffff; 
+            border-radius: 8px; 
+            font-weight: 700; 
+            cursor: pointer;
+            transition: all 0.2s; 
+            min-width: 90px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        button:hover {
+            background: #2dd4bf;
+            border-color: #2dd4bf;
+            color: #0f172a;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(45, 212, 191, 0.4);
+        }
+
+        button#toggleBtn.playing { 
+            border-color: #ef4444; 
+            color: #ffffff; 
+            background: #991b1b; 
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        }
+        
+        button:active { 
+            transform: scale(0.95); 
+        }
+
+        .flash { 
+            animation: flashbang 0.5s ease-out; 
+        }
+        
+        @keyframes flashbang {
+            0% { filter: brightness(8); transform: scale(1.05); }
+            100% { filter: brightness(1); transform: scale(1); }
+        }
+
+        .orientation-warning {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0f1a;
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .orientation-warning.show {
+            display: flex;
+        }
+
+        .rotate-icon {
+            font-size: 4rem;
+            animation: rotate 2s infinite ease-in-out;
+        }
+
+        @keyframes rotate {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="orientation-warning" id="orientationWarning">
+        <div class="rotate-icon">📱</div>
+        <h2>Please rotate your device</h2>
+        <p class="intro">This game works best in portrait mode</p>
+    </div>
+
+    <div class="header">
+        <h1 id="status">PIPE RUNNER</h1>
+        <p class="intro">Tilt your phone to roll the ball and reach the destination</p>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div class="ui">
+        <button id="toggleBtn">START</button>
+        <button id="resetBtn">NEW MAZE</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const statusEl = document.getElementById('status');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const orientationWarning = document.getElementById('orientationWarning');
+        
+        const COLS = 15, ROWS = 22, TILE = 29; 
+        canvas.width = COLS * TILE; 
+        canvas.height = ROWS * TILE;
+
+        let maze = [], traps = [], fireworks = [], 
+            ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0 };
+        let tilt = { x: 0, y: 0 }, goal = { x: 0, y: 0 }, isPlaying = false;
+        let audioCtx, orientationLocked = false;
+        let lastTime = Date.now();
+
+        // Check orientation and show warning if needed
+        function checkOrientation() {
+            const isPortrait = window.innerHeight > window.innerWidth;
+            if (!isPortrait && isPlaying) {
+                orientationWarning.classList.add('show');
+            } else {
+                orientationWarning.classList.remove('show');
+            }
+        }
+
+        window.addEventListener('resize', checkOrientation);
+        window.addEventListener('orientationchange', checkOrientation);
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(freq, type, duration, vol, endFreq = null) {
+            if (!audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                if (endFreq) {
+                    osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+                }
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); 
+                gain.connect(audioCtx.destination);
+                osc.start(); 
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log('Audio error:', e);
+            }
+        }
+
+        function generateMaze() {
+            maze = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
+            const stack = [{x: 1, y: 1}]; 
+            maze[1][1] = 0;
+            const paths = [];
+            
+            while (stack.length > 0) {
+                const curr = stack[stack.length - 1];
+                const neighbors = [[0,2],[0,-2],[2,0],[-2,0]]
+                    .map(([dx, dy]) => ({x: curr.x + dx, y: curr.y + dy, dx, dy}))
+                    .filter(n => n.x > 0 && n.x < COLS-1 && n.y > 0 && n.y < ROWS-1 && maze[n.y][n.x] === 1)
+                    .sort(() => Math.random() - 0.5);
+                    
+                if (neighbors.length > 0) {
+                    const next = neighbors[0];
+                    maze[next.y - next.dy/2][next.x - next.dx/2] = 0; 
+                    maze[next.y][next.x] = 0;
+                    paths.push({x: next.x, y: next.y}); 
+                    stack.push(next);
+                } else {
+                    stack.pop();
+                }
+            }
+            
+            // Place traps on random path cells
+            traps = [];
+            for(let i = 0; i < 8; i++) {
+                let p = paths[Math.floor(Math.random() * paths.length)];
+                traps.push({ x: p.x * TILE + TILE/2, y: p.y * TILE + TILE/2 });
+            }
+            
+            // Reset ball position
+            ball.x = TILE * 1.5; 
+            ball.y = TILE * 1.5; 
+            ball.vx = 0; 
+            ball.vy = 0;
+            
+            // Set goal
+            goal = { x: (COLS - 2) * TILE + TILE/2, y: (ROWS - 2) * TILE + TILE/2 };
+            fireworks = [];
+        }
+
+        function createFirework(x, y) {
+            for(let i = 0; i < 100; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 3;
+                fireworks.push({
+                    x: x, 
+                    y: y, 
+                    vx: Math.cos(angle) * speed, 
+                    vy: Math.sin(angle) * speed,
+                    life: 1, 
+                    size: Math.random() * 2.5 + 1,
+                    color: ['#2dd4bf', '#3b82f6', '#a3e635', '#fbbf24'][Math.floor(Math.random() * 4)],
+                    gravity: 0.12
+                });
+            }
+        }
+
+        function triggerVictory() {
+            isPlaying = false;
+            toggleBtn.innerText = "START";
+            toggleBtn.classList.remove('playing');
+            statusEl.innerText = "🎉 SUCCESS!";
+            canvas.classList.add('flash');
+            playSound(300, 'sine', 0.5, 0.08, 1000);
+            createFirework(goal.x, goal.y);
+            
+            setTimeout(() => {
+                createFirework(goal.x - 40, goal.y - 30);
+                createFirework(goal.x + 40, goal.y - 30);
+                playSound(400, 'square', 0.3, 0.04);
+            }, 200);
+            
+            setTimeout(() => {
+                createFirework(goal.x, goal.y + 40);
+                playSound(500, 'sine', 0.2, 0.04);
+            }, 400);
+            
+            setTimeout(() => canvas.classList.remove('flash'), 500);
+        }
+
+        function triggerTrap() {
+            canvas.style.filter = "brightness(0.3) sepia(1) hue-rotate(-50deg)";
+            playSound(350, 'sawtooth', 0.15, 0.08, 50);
+            
+            // Find random open spot
+            let rx, ry;
+            do { 
+                rx = Math.floor(Math.random() * COLS); 
+                ry = Math.floor(Math.random() * ROWS); 
+            } while (maze[ry][rx] !== 0);
+            
+            ball.x = rx * TILE + TILE/2; 
+            ball.y = ry * TILE + TILE/2;
+            ball.vx = 0; 
+            ball.vy = 0;
+            
+            setTimeout(() => canvas.style.filter = "", 180);
+        }
+
+        function update() {
+            const currentTime = Date.now();
+            const deltaTime = Math.min((currentTime - lastTime) / 16.67, 2); // Cap delta to prevent huge jumps
+            lastTime = currentTime;
+
+            if (isPlaying) {
+                // Smoother physics with delta time
+                const acceleration = 0.35 * deltaTime;
+                const friction = Math.pow(0.94, deltaTime);
+                
+                ball.vx = (ball.vx + tilt.x * acceleration) * friction;
+                ball.vy = (ball.vy + tilt.y * acceleration) * friction;
+                
+                // Limit max velocity for smoother control
+                const maxVel = 3.5;
+                const speed = Math.hypot(ball.vx, ball.vy);
+                if (speed > maxVel) {
+                    ball.vx = (ball.vx / speed) * maxVel;
+                    ball.vy = (ball.vy / speed) * maxVel;
+                }
+                
+                let nx = ball.x + ball.vx;
+                let ny = ball.y + ball.vy;
+                
+                if (!isWall(nx, ball.y)) {
+                    ball.x = nx;
+                } else {
+                    ball.vx *= -0.5;
+                }
+                
+                if (!isWall(ball.x, ny)) {
+                    ball.y = ny;
+                } else {
+                    ball.vy *= -0.5;
+                }
+                
+                // Check trap collisions
+                traps.forEach(t => {
+                    if (Math.hypot(ball.x - t.x, ball.y - t.y) < ball.radius * 1.3) {
+                        triggerTrap();
+                    }
+                });
+                
+                // Check goal collision
+                if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < ball.radius * 1.8) {
+                    triggerVictory();
+                }
+            }
+            
+            // Update fireworks
+            fireworks.forEach(f => { 
+                f.x += f.vx; 
+                f.y += f.vy; 
+                f.vy += f.gravity; 
+                f.life -= 0.015; 
+            });
+            fireworks = fireworks.filter(f => f.life > 0);
+            
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#0a0f1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw pipe paths
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            
+            // Shadow/depth layer
+            ctx.strokeStyle = '#0a0f1a';
+            ctx.lineWidth = TILE - 2;
+            drawUnifiedPipePath();
+
+            // Main pipe layer
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = TILE - 6;
+            drawUnifiedPipePath();
+
+            // Inner highlight
+            ctx.strokeStyle = '#2d3748';
+            ctx.lineWidth = TILE - 12;
+            drawUnifiedPipePath();
+
+            // Draw traps
+            traps.forEach(t => {
+                const trapPulse = 0.7 + Math.sin(Date.now() / 300) * 0.3;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#991b1b';
+                ctx.fillStyle = `rgba(153, 27, 27, ${trapPulse})`;
+                ctx.beginPath(); 
+                ctx.arc(t.x, t.y, ball.radius * 1.3, 0, Math.PI * 2); 
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+
+            // Draw goal
+            const pulse = 0.6 + Math.sin(Date.now() / 600) * 0.3;
+            ctx.shadowBlur = 25; 
+            ctx.shadowColor = '#a3e635';
+            ctx.fillStyle = `rgba(163, 230, 53, ${pulse})`;
+            ctx.beginPath(); 
+            ctx.arc(goal.x, goal.y, ball.radius * 2.5, 0, Math.PI * 2); 
+            ctx.fill();
+            
+            // Goal inner glow
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.beginPath(); 
+            ctx.arc(goal.x, goal.y, ball.radius * 1.2, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Draw ball with better shading
+            const grad = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 1, ball.x, ball.y, ball.radius);
+            grad.addColorStop(0, '#ffffff'); 
+            grad.addColorStop(0.4, '#e2e8f0');
+            grad.addColorStop(1, '#64748b');
+            ctx.fillStyle = grad; 
+            
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.beginPath(); 
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Draw fireworks
+            fireworks.forEach(f => {
+                ctx.globalAlpha = f.life; 
+                ctx.fillStyle = f.color;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = f.color;
+                ctx.beginPath(); 
+                ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); 
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+        }
+
+        function drawUnifiedPipePath() {
+            ctx.beginPath();
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (maze[y][x] === 0) {
+                        const px = x * TILE + TILE / 2;
+                        const py = y * TILE + TILE / 2;
+                        
+                        // Connect to neighboring path cells
+                        [[0, 1], [1, 0]].forEach(([dx, dy]) => {
+                            let nx = x + dx, ny = y + dy;
+                            if (nx < COLS && ny < ROWS && maze[ny][nx] === 0) {
+                                ctx.moveTo(px, py);
+                                ctx.lineTo(nx * TILE + TILE / 2, ny * TILE + TILE / 2);
+                            }
+                        });
+                        
+                        // Ensure corners are rounded
+                        ctx.moveTo(px, py);
+                        ctx.lineTo(px, py);
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
+        function isWall(px, py) {
+            const b = ball.radius - 1;
+            return [{x: px - b, y: py - b}, {x: px + b, y: py - b}, 
+                    {x: px - b, y: py + b}, {x: px + b, y: py + b}].some(p => {
+                let gx = Math.floor(p.x / TILE), gy = Math.floor(p.y / TILE);
+                return !maze[gy] || maze[gy][gx] === 1;
+            });
+        }
+
+        async function lockOrientation() {
+            try {
+                // Try to lock to portrait orientation
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('portrait').catch(err => {
+                        console.log('Orientation lock not supported:', err);
+                    });
+                    orientationLocked = true;
+                }
+            } catch (e) {
+                console.log('Could not lock orientation:', e);
+            }
+        }
+
+        async function toggleHandler() {
+            initAudio();
+            
+            // Request fullscreen on first play
+            if (!isPlaying) {
+                try {
+                    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                        await document.documentElement.requestFullscreen();
+                    }
+                    
+                    // Lock orientation after entering fullscreen
+                    await lockOrientation();
+                    
+                } catch (e) {
+                    console.log('Fullscreen/orientation error:', e);
+                }
+                
+                // Request device orientation permission on iOS
+                if (typeof DeviceOrientationEvent !== 'undefined' && 
+                    typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    try {
+                        const res = await DeviceOrientationEvent.requestPermission();
+                        if (res === 'granted') {
+                            startSensors();
+                        } else {
+                            alert('Please allow device orientation access to play');
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('Permission error:', e);
+                    }
+                } else {
+                    startSensors();
+                }
+            }
+
+            isPlaying = !isPlaying;
+            toggleBtn.innerText = isPlaying ? "PAUSE" : "START";
+            
+            if (isPlaying) {
+                toggleBtn.classList.add('playing');
+                statusEl.innerText = "PLAYING...";
+                checkOrientation();
+            } else {
+                toggleBtn.classList.remove('playing');
+                statusEl.innerText = "PAUSED";
+            }
+        }
+
+        function startSensors() { 
+            window.addEventListener('deviceorientation', handleOrientation, { passive: true });
+        }
+
+        function handleOrientation(e) {
+            if (e.gamma !== null && e.beta !== null) {
+                // Smoother tilt mapping
+                tilt.x = Math.max(-25, Math.min(25, e.gamma)) * 0.1;
+                tilt.y = Math.max(-25, Math.min(25, e.beta - 45)) * 0.1; // Adjust for natural holding angle
+            }
+        }
+
+        function resetMaze() { 
+            generateMaze(); 
+            isPlaying = false; 
+            toggleBtn.innerText = "START"; 
+            toggleBtn.classList.remove('playing'); 
+            statusEl.innerText = "PIPE RUNNER";
+            playSound(200, 'square', 0.1, 0.05);
+        }
+
+        toggleBtn.addEventListener('click', toggleHandler);
+        resetBtn.addEventListener('click', resetMaze);
+        
+        // Initialize
+        generateMaze(); 
+        lastTime = Date.now();
+        update();
+        checkOrientation();
+    </script>
+</body>
+</html>
