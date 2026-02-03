@@ -352,15 +352,15 @@
             lastTime = currentTime;
 
             if (isPlaying) {
-                // Smoother physics with delta time
-                const acceleration = 0.35 * deltaTime;
-                const friction = Math.pow(0.94, deltaTime);
+                // Enhanced physics with more weight and momentum
+                const acceleration = 0.25 * deltaTime; // Reduced for heavier feel
+                const friction = Math.pow(0.96, deltaTime); // Less friction for more gliding
                 
                 ball.vx = (ball.vx + tilt.x * acceleration) * friction;
                 ball.vy = (ball.vy + tilt.y * acceleration) * friction;
                 
-                // Limit max velocity for smoother control
-                const maxVel = 3.5;
+                // Lower max velocity for more controlled, weighty movement
+                const maxVel = 2.8;
                 const speed = Math.hypot(ball.vx, ball.vy);
                 if (speed > maxVel) {
                     ball.vx = (ball.vx / speed) * maxVel;
@@ -373,13 +373,13 @@
                 if (!isWall(nx, ball.y)) {
                     ball.x = nx;
                 } else {
-                    ball.vx *= -0.5;
+                    ball.vx *= -0.3; // Less bouncy for heavier feel
                 }
                 
                 if (!isWall(ball.x, ny)) {
                     ball.y = ny;
                 } else {
-                    ball.vy *= -0.5;
+                    ball.vy *= -0.3; // Less bouncy for heavier feel
                 }
                 
                 // Check trap collisions
@@ -591,9 +591,9 @@
 
         function handleOrientation(e) {
             if (e.gamma !== null && e.beta !== null) {
-                // Smoother tilt mapping
-                tilt.x = Math.max(-25, Math.min(25, e.gamma)) * 0.1;
-                tilt.y = Math.max(-25, Math.min(25, e.beta - 45)) * 0.1; // Adjust for natural holding angle
+                // Adjusted tilt mapping for heavier, more realistic feel
+                tilt.x = Math.max(-30, Math.min(30, e.gamma)) * 0.15;
+                tilt.y = Math.max(-30, Math.min(30, e.beta - 45)) * 0.15; // Adjust for natural holding angle
             }
         }
 
